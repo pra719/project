@@ -1,30 +1,74 @@
+version: '3.8'
+
 services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: secure_app_db
+    environment:
+      POSTGRES_DB: secure_app
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: secure_password_2024
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - secure_network
+
+  # Backend API Server
   backend:
     build:
       context: ./backend
-      dockerfile: ./Dockerfile.backend
+      dockerfile: Dockerfile
+    container_name: secure_app_backend
     ports:
       - "5000:5000"
     environment:
-      - MONGO_URI=mongodb://mongo:27017/secure_app
-      - JWT_SECRET=your_jwt_secret
-    depends_on:
-      - mongo
+      NODE_ENV: development
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: secure_app
+      DB_USER: admin
+      DB_PASSWORD: secure_password_2024
+      JWT_SECRET: your_jwt_secret_key_here_2024
+      PORT: 5000
     volumes:
-      - ./backend:/app
+      - ./backend/uploads:/app/uploads
+      - ./backend/certificates:/app/certificates
+    depends_on:
+      - postgres
+    networks:
+      - secure_network
+
+  # Frontend React Application
   frontend:
     build:
       context: ./frontend
-      dockerfile: ./Dockerfile.frontend
+      dockerfile: Dockerfile
+    container_name: secure_app_frontend
     ports:
       - "3000:3000"
-    volumes:
-      - ./frontend:/app
-  mongo:
-    image: mongo:latest
+    environment:
+      REACT_APP_API_URL: http://localhost:5000/api
+    depends_on:
+      - backend
+    networks:
+      - secure_network
+
+  # Redis for session management (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: secure_app_redis
     ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
+      - "6379:6379"
+    networks:
+      - secure_network
+
 volumes:
-  mongo_data:
+  postgres_data:
+
+networks:
+  secure_network:
+    driver: bridge
