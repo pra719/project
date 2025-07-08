@@ -5,14 +5,16 @@ export const API_ENDPOINTS = {
     LOGIN: `${API_BASE_URL}/api/auth/login`,
     REGISTER: `${API_BASE_URL}/api/auth/register`,
   },
-  FILE: {
-    UPLOAD: `${API_BASE_URL}/api/file/upload`,
-    LIST: `${API_BASE_URL}/api/file/list`,
-    DOWNLOAD: (fileId) => `${API_BASE_URL}/api/file/download/${fileId}`,
+  FILES: {
+    UPLOAD: `${API_BASE_URL}/api/files/upload`,
+    LIST: `${API_BASE_URL}/api/files/list`,
+    DOWNLOAD: (fileId) => `${API_BASE_URL}/api/files/download/${fileId}`,
+    SHARE: `${API_BASE_URL}/api/files/share`,
   },
-  MESSAGE: {
-    SEND: `${API_BASE_URL}/api/message/send`,
-    LIST: `${API_BASE_URL}/api/message/list`,
+  MESSAGES: {
+    SEND: `${API_BASE_URL}/api/messages/send`,
+    LIST: `${API_BASE_URL}/api/messages/list`,
+    DECRYPT: (messageId) => `${API_BASE_URL}/api/messages/${messageId}/decrypt`,
   }
 };
 
