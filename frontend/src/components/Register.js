@@ -5,6 +5,7 @@ import { API_ENDPOINTS } from '../utils/api';
 
 function Register() {
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
@@ -17,23 +18,38 @@ function Register() {
     setSuccess('');
     
     try {
-      const res = await axios.post(API_ENDPOINTS.AUTH.REGISTER, { username });
+      if (!username.trim() || !email.trim()) {
+        setError('Username and email are required');
+        setLoading(false);
+        return;
+      }
+
+      if (!/\S+@\S+\.\S+/.test(email)) {
+        setError('Please enter a valid email address');
+        setLoading(false);
+        return;
+      }
+
+      const res = await axios.post(API_ENDPOINTS.AUTH.REGISTER, { username, email });
       
-      // Create a download link for the private key
-      const blob = new Blob([res.data.privateKey], { type: 'text/plain' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${username}_private_key.pem`;
-      link.click();
-      window.URL.revokeObjectURL(url);
-      
-      setSuccess('Registration successful! Your private key has been downloaded. Please keep it safe.');
-      setTimeout(() => {
-        navigate('/login');
-      }, 3000);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Registration failed');
+      if (res.data.success) {
+        // Create a download link for the private key
+        const blob = new Blob([res.data.data.privateKey], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${username}-private-key.pem`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+        setSuccess('Registration successful! Your private key has been downloaded. Please keep it secure!');
+        setTimeout(() => navigate('/login'), 3000);
+      }
+    } catch (error) {
+      console.error('Registration error:', error);
+      setError(error.response?.data?.error || 'Registration failed');
     } finally {
       setLoading(false);
     }
@@ -89,26 +105,36 @@ function Register() {
           )}
           
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-white/90 mb-2">
+            <div className="form-group">
+              <label htmlFor="username" className="form-label">
                 Username
               </label>
               <input
                 id="username"
                 type="text"
-                placeholder="Choose a unique username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="input-field focus-ring"
+                className="form-input"
+                placeholder="Enter your username"
                 required
-                minLength="3"
-                maxLength="20"
-                pattern="[a-zA-Z0-9_]+"
-                title="Username can only contain letters, numbers, and underscores"
+                disabled={loading}
               />
-              <p className="mt-2 text-xs text-white/60">
-                3-20 characters, letters, numbers, and underscores only
-              </p>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="email" className="form-label">
+                Email Address
+              </label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="form-input"
+                placeholder="Enter your email address"
+                required
+                disabled={loading}
+              />
             </div>
             
             <div className="bg-blue-500/10 backdrop-blur-sm border border-blue-400/30 rounded-xl p-4">

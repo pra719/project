@@ -82,15 +82,15 @@ router.post('/register', authLimiter, async (req, res) => {
   }
 });
 
-// User login with digital signature verification
+// Simplified login for initial testing - TEMPORARY
 router.post('/login', authLimiter, async (req, res) => {
-  const { username, challenge, signature } = req.body;
+  const { username, privateKey } = req.body;
   
   try {
     // Validate input
-    if (!username || !challenge || !signature) {
+    if (!username || !privateKey) {
       return res.status(400).json({ 
-        error: 'Username, challenge, and signature are required' 
+        error: 'Username and private key are required' 
       });
     }
 
@@ -109,21 +109,18 @@ router.post('/login', authLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Certificate has expired' });
     }
 
-    // Verify certificate against CA
-    const isValidCert = await CA.verifyCertificate(user.certificate);
-    if (!isValidCert) {
-      return res.status(401).json({ error: 'Invalid certificate' });
-    }
-
-    // Verify digital signature
-    const isValidSignature = CryptoUtils.verifySignature(
-      challenge, 
-      signature, 
-      user.publicKey
-    );
-
-    if (!isValidSignature) {
-      return res.status(401).json({ error: 'Invalid signature' });
+    // For now, just check if the private key can be used to verify against public key
+    // In production, this should use challenge-response
+    try {
+      const testData = "test_login_data";
+      const signature = CryptoUtils.createSignature(testData, privateKey);
+      const isValidSignature = CryptoUtils.verifySignature(testData, signature, user.publicKey);
+      
+      if (!isValidSignature) {
+        return res.status(401).json({ error: 'Invalid private key' });
+      }
+    } catch (error) {
+      return res.status(401).json({ error: 'Invalid private key format' });
     }
 
     // Update last login
@@ -143,14 +140,12 @@ router.post('/login', authLimiter, async (req, res) => {
     res.json({
       success: true,
       message: 'Login successful',
-      data: {
-        token,
-        user: {
-          id: user._id,
-          username: user.username,
-          email: user.email,
-          publicKey: user.publicKey
-        }
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        publicKey: user.publicKey
       }
     });
 
