@@ -76,6 +76,7 @@ router.post('/upload', authenticateToken, upload.single('file'), async (req, res
       filename: `${Date.now()}_${req.file.originalname}`,
       originalName: req.file.originalname,
       encryptedData: encryptedFile.encryptedData,
+      iv: encryptedFile.iv, // Store IV for decryption
       encryptedKey: encryptedKey,
       fileSize: req.file.size,
       mimeType: req.file.mimetype,
@@ -207,8 +208,8 @@ router.post('/download/:fileId', authenticateToken, async (req, res) => {
     const aesKeyHex = CryptoUtils.decryptRSA(encryptedKey, privateKey);
     const aesKey = Buffer.from(aesKeyHex, 'hex');
 
-    // Decrypt file content
-    const decryptedContent = CryptoUtils.decryptAES(file.encryptedData, aesKey);
+    // Decrypt file content using IV
+    const decryptedContent = CryptoUtils.decryptAES(file.encryptedData, aesKey, file.iv);
     const fileBuffer = Buffer.from(decryptedContent, 'base64');
 
     // Verify digital signature

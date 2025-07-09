@@ -1,336 +1,264 @@
-# Secure File Sharing & Messaging Application
+# Secure File Sharing Application
 
-A comprehensive web-based application implementing **Public Key Infrastructure (PKI)** for secure user authentication, file sharing, and messaging using advanced cryptographic techniques.
+A modern, secure file sharing application with end-to-end encryption, digital signatures, and certificate-based authentication.
 
-## 🎯 Assignment Overview
+## 🚀 Features
 
-This project fulfills the requirements for **ST6051CEM - Practical Cryptography** assignment on "Design and Development of a Secure User Authentication System" implementing:
+- **End-to-End Encryption**: Files are encrypted using AES-256 before uploading
+- **Digital Signatures**: All files and messages are digitally signed for integrity verification
+- **Certificate-Based Authentication**: PKI-based authentication using X.509 certificates
+- **Secure Messaging**: Encrypted messaging system with RSA encryption
+- **File Sharing**: Share encrypted files securely with other users
+- **Modern UI**: Beautiful, responsive interface built with React and Tailwind CSS
+- **Real-time Security**: Rate limiting, CORS protection, and security headers
 
-- ✅ **User Authentication** with digital certificates and PKI
-- ✅ **Document Signing & Verification** with digital signatures
-- ✅ **Security Features** ensuring confidentiality, integrity, and authentication
-- ✅ **Key Management** with proper CA-issued certificates
-- ✅ **Real-world Use Case** for secure file sharing and messaging
-- ✅ **Testing & Validation** against common cryptographic attacks
+## 🏗️ Technology Stack
 
-## 🏗️ System Architecture
+### Backend
+- **Node.js** with Express.js
+- **MongoDB** for data storage
+- **node-forge** for cryptographic operations
+- **JWT** for session management
+- **Helmet** for security headers
+- **Morgan** for logging
 
-### Backend Components
-```
-backend/
-├── server.js                 # Main Express server with security middleware
-├── package.json              # Dependencies and scripts
-├── ca/                       # Certificate Authority directory
-│   ├── ca-key.pem            # CA private key (auto-generated)
-│   └── ca-cert.pem           # CA certificate (auto-generated)
-├── utils/
-│   ├── crypto.js             # Cryptographic utilities (RSA, AES, signatures)
-│   └── ca.js                 # Certificate Authority implementation
-├── models/
-│   ├── User.js               # User model with PKI fields
-│   ├── File.js               # Encrypted file storage model
-│   └── Message.js            # Encrypted message model
-├── middleware/
-│   └── auth.js               # JWT authentication middleware
-└── routes/
-    ├── auth.js               # Registration, login, PKI endpoints
-    ├── file.js               # Secure file upload/download/sharing
-    └── message.js            # Encrypted messaging system
-```
+### Frontend
+- **React 18** with functional components
+- **React Router** for navigation
+- **Tailwind CSS** for styling
+- **Axios** for API communication
+- **node-forge** for client-side cryptography
 
-### Frontend Components
-```
-frontend/
-├── package.json              # React dependencies with crypto libraries
-├── tailwind.config.js        # Modern UI configuration
-├── public/
-│   └── index.html            # Main HTML template
-└── src/
-    ├── index.js              # React application entry point
-    ├── App.js                # Main application router
-    ├── styles.css            # Tailwind CSS with custom components
-    ├── utils/
-    │   ├── crypto.js         # Client-side cryptographic operations
-    │   └── keyStorage.js     # Secure client-side key management
-    └── components/
-        ├── Register.js       # User registration with key generation
-        ├── Login.js          # PKI-based authentication
-        ├── FileShare.js      # Secure file upload/sharing interface
-        └── Messaging.js      # Encrypted messaging interface
-```
-
-## 🔐 Cryptographic Implementation
-
-### 1. Public Key Infrastructure (PKI)
-- **Certificate Authority (CA)**: Self-signed root CA for issuing user certificates
-- **RSA Key Pairs**: 2048-bit keys generated for each user
-- **X.509 Certificates**: Standard digital certificates with 1-year validity
-- **Certificate Validation**: Automatic verification against CA
-
-### 2. Encryption Mechanisms
-- **Hybrid Encryption**: AES-256 for data + RSA-2048 for key exchange
-- **File Encryption**: Large files encrypted with AES, keys encrypted with RSA
-- **Message Encryption**: End-to-end encryption using recipient's public key
-- **Key Derivation**: Secure random key generation using crypto libraries
-
-### 3. Digital Signatures
-- **SHA-256 Hashing**: For data integrity verification
-- **RSA Signatures**: Document and message signing with private keys
-- **Signature Verification**: Public key verification of authenticity
-- **Non-repudiation**: Cryptographic proof of origin
-
-### 4. Security Features
-- **Authentication**: Challenge-response with digital signatures
-- **Authorization**: JWT tokens with certificate validation
-- **Confidentiality**: End-to-end encryption for all sensitive data
-- **Integrity**: Hash verification and digital signatures
-- **Rate Limiting**: Protection against brute force attacks
-- **CORS Protection**: Secure cross-origin resource sharing
-
-## 🔑 Key Management
-
-### Client-Side Key Storage
-- **In-Memory Storage**: Keys stored in browser memory (not localStorage)
-- **Session Storage**: Public keys and certificates only
-- **Private Key Security**: Never stored persistently in browser
-- **Key Validation**: Automatic expiration and format validation
-- **Export/Import**: Encrypted key backup functionality
-
-### Server-Side Certificate Management
-- **CA Key Storage**: Secure file system storage with proper permissions
-- **Certificate Issuance**: Automated certificate generation and signing
-- **Revocation Support**: Framework for certificate revocation lists
-- **Expiration Handling**: Automatic certificate validity checking
-
-## 🌐 Use Case: Secure Business Document Sharing
-
-This application addresses real-world needs for:
-
-1. **Legal Document Exchange**: Law firms sharing sensitive contracts
-2. **Healthcare Records**: Secure patient data transmission
-3. **Financial Services**: Encrypted financial document sharing
-4. **Corporate Communications**: Internal secure messaging
-5. **Government Services**: Citizen document verification
-
-### Security Benefits
-- **Regulatory Compliance**: Meets GDPR, HIPAA data protection requirements
-- **Audit Trail**: Complete cryptographic verification history
-- **Access Control**: Granular file sharing permissions
-- **Data Sovereignty**: Client-side key control ensures data ownership
-
-## 🚀 Deployment with Docker
+## 🔧 Installation & Setup
 
 ### Prerequisites
-```bash
-# Install Docker and Docker Compose
-docker --version
-docker-compose --version
-```
+- Node.js (v16 or higher)
+- MongoDB (v4.4 or higher)
+- npm or yarn
 
-### Quick Start
+### 1. Clone the Repository
 ```bash
-# Clone and start the application
 git clone <repository-url>
-cd secure-file-sharing
-
-# Build and run with Docker Compose
-docker-compose up --build
-
-# Access the application
-# Frontend: http://localhost:3000
-# Backend: http://localhost:5000
-# MongoDB: localhost:27017
+cd secure-file-sharing-app
 ```
 
-### Docker Configuration
-```yaml
-# docker-compose.yml
-services:
-  backend:     # Node.js Express server
-  frontend:    # React application
-  mongo:       # MongoDB database
-```
-
-## 🔧 Manual Setup
-
-### Backend Setup
+### 2. Install Dependencies
 ```bash
-cd backend
+# Install all dependencies (root, backend, and frontend)
+npm run install-all
+
+# Or install manually:
 npm install
-npm run dev
+cd backend && npm install
+cd ../frontend && npm install
 ```
 
-### Frontend Setup
+### 3. Environment Configuration
+
+Create a `.env` file in the backend directory:
 ```bash
-cd frontend
-npm install
-npm start
+cp .env.example .env
 ```
 
-### Environment Variables
-```bash
-# backend/.env
-MONGO_URI=mongodb://localhost:27017/secure_app
-JWT_SECRET=your-secure-jwt-secret
+Update the environment variables:
+```env
+# Database Configuration
+MONGO_URI=mongodb://localhost:27017/secure_file_sharing
+
+# Server Configuration
+PORT=5000
 NODE_ENV=development
+
+# Security Configuration
+JWT_SECRET=your_super_secure_jwt_secret_key_here_change_in_production
+
+# Frontend Configuration
 FRONTEND_URL=http://localhost:3000
 ```
 
-## 🧪 Testing & Validation
+### 4. Start MongoDB
 
-### Security Testing
-1. **Certificate Validation**: Verify CA-signed certificates
-2. **Signature Verification**: Test digital signature integrity
-3. **Encryption Testing**: Validate end-to-end encryption
-4. **Attack Simulation**: Test against common threats
+Make sure MongoDB is running on your system:
+```bash
+# On macOS with Homebrew
+brew services start mongodb-community
 
-### Common Attack Mitigation
-- **Man-in-the-Middle**: Certificate pinning and validation
-- **Certificate Spoofing**: CA verification and trust chain
-- **Replay Attacks**: Challenge-response authentication
-- **Brute Force**: Rate limiting and account lockout
-- **Data Tampering**: Digital signatures and hash verification
+# On Ubuntu/Debian
+sudo systemctl start mongod
 
-## 📋 User Guide
+# Or using Docker
+docker run -d -p 27017:27017 --name mongodb mongo:latest
+```
 
-### 1. Registration Process
-1. Enter username and email
-2. System generates RSA key pair
-3. CA issues digital certificate
-4. User downloads and securely stores private key
-5. Public key and certificate stored on server
+### 5. Start the Application
 
-### 2. Login Process
-1. Enter username
-2. System generates challenge
-3. User signs challenge with private key
-4. Server verifies signature with public key
-5. JWT token issued for session
+#### Development Mode (Recommended)
+```bash
+# Start both backend and frontend concurrently
+npm run dev
+```
 
-### 3. File Sharing
-1. Upload file through encrypted interface
-2. System encrypts file with AES-256
-3. AES key encrypted with recipient's public key
-4. Digital signature created for integrity
-5. Recipient decrypts with their private key
+#### Manual Start
+```bash
+# Terminal 1: Start Backend
+npm run server
+
+# Terminal 2: Start Frontend
+npm run client
+```
+
+### 6. Access the Application
+
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:5000
+- **API Documentation**: http://localhost:5000/health
+
+## 📋 Usage Guide
+
+### 1. User Registration
+1. Navigate to the registration page
+2. Enter a username and email address
+3. Click "Create Account"
+4. Download and save your private key and certificate files securely
+5. You'll be redirected to the login page
+
+### 2. User Login
+1. Enter your username
+2. Upload your private key file (downloaded during registration)
+3. The system will use challenge-response authentication
+4. Successfully authenticated users are redirected to the dashboard
+
+### 3. File Operations
+
+#### Upload Files
+1. Navigate to the "Files" section
+2. Select a file (max 10MB)
+3. File is automatically encrypted with AES-256
+4. Click "Upload File"
+
+#### Share Files
+1. Select a file from your uploaded files
+2. Enter the recipient's username
+3. Click "Share File"
+4. The file's encryption key is encrypted with the recipient's public key
+
+#### Download Files
+1. Click the download button on any file you own or that's shared with you
+2. The file is automatically decrypted using your private key
+3. Digital signature is verified for integrity
 
 ### 4. Secure Messaging
-1. Compose message in interface
-2. Message encrypted with recipient's public key
-3. Digital signature attached
-4. End-to-end encrypted transmission
-5. Recipient verifies and decrypts
+1. Navigate to the "Messages" section
+2. Enter recipient username and your message
+3. Message is encrypted with recipient's public key
+4. Digital signature is created for authentication
+
+## 🔒 Security Features
+
+### Cryptographic Implementation
+- **RSA-2048**: For key exchange and digital signatures
+- **AES-256-CBC**: For symmetric encryption of files and data
+- **SHA-256**: For hashing and integrity verification
+- **X.509 Certificates**: For identity verification
+- **Certificate Authority**: Self-signed CA for certificate management
+
+### Authentication Flow
+1. **Registration**: Generate RSA key pair and X.509 certificate
+2. **Challenge-Response**: Server sends random challenge
+3. **Digital Signature**: Client signs challenge with private key
+4. **Verification**: Server verifies signature with user's public key
+5. **JWT Token**: Issued for subsequent API calls
+
+### File Security
+1. **Client-Side Encryption**: Files encrypted before upload
+2. **Key Management**: AES keys encrypted with RSA public keys
+3. **Digital Signatures**: All files signed for integrity
+4. **Access Control**: Role-based access to shared files
 
 ## 🛡️ Security Considerations
 
 ### Production Deployment
-- Use Hardware Security Modules (HSM) for CA keys
-- Implement Certificate Revocation Lists (CRL)
-- Deploy with HTTPS/TLS encryption
-- Regular security audits and penetration testing
-- Backup and disaster recovery procedures
+- Change all default secrets and passwords
+- Use HTTPS/TLS for all communications
+- Implement proper key storage (HSM recommended)
+- Regular security audits and updates
+- Implement proper logging and monitoring
 
-### Key Rotation
-- Automated certificate renewal
-- Graceful key transition periods
-- Legacy key support during migration
-- Secure key escrow for enterprise
+### Key Management
+- Private keys should never be stored on the server
+- Users are responsible for keeping their private keys secure
+- Consider implementing key escrow for enterprise deployments
+- Regular key rotation policies
 
-## 📊 Performance & Scalability
+## � Project Structure
 
-- **Encryption Overhead**: ~10ms for file encryption
-- **Database Optimization**: Indexed queries for file/message retrieval
-- **Caching Strategy**: Session-based key caching
-- **Load Balancing**: Stateless architecture for horizontal scaling
-
-## 🔍 Monitoring & Logging
-
-- **Security Events**: Authentication attempts, key usage
-- **Performance Metrics**: Encryption/decryption times
-- **Error Tracking**: Cryptographic operation failures
-- **Audit Logs**: Complete user activity history
-
-## 📚 Technical Documentation
-
-### API Endpoints
 ```
-POST /api/auth/register     # User registration with PKI
-POST /api/auth/login        # Challenge-response authentication
-POST /api/auth/challenge    # Generate login challenge
-GET  /api/auth/publickey/:username  # Get user's public key
-
-POST /api/file/upload       # Encrypted file upload
-POST /api/file/share/:id    # Share file with users
-POST /api/file/download/:id # Download and decrypt file
-GET  /api/file/list         # List user's files
-
-POST /api/message/send      # Send encrypted message
-POST /api/message/view/:id  # Decrypt and view message
-GET  /api/message/conversations  # List conversations
+secure-file-sharing-app/
+├── backend/
+│   ├── ca/                 # Certificate Authority files
+│   ├── config/            # Database configuration
+│   ├── middleware/        # Authentication middleware
+│   ├── models/           # MongoDB schemas
+│   ├── routes/           # API routes
+│   ├── utils/            # Utility functions (crypto, CA)
+│   ├── server.js         # Main server file
+│   └── package.json      # Backend dependencies
+├── frontend/
+│   ├── public/           # Static files
+│   ├── src/
+│   │   ├── components/   # React components
+│   │   ├── utils/        # Client-side utilities
+│   │   ├── App.js        # Main App component
+│   │   └── index.js      # Entry point
+│   ├── tailwind.config.js
+│   └── package.json      # Frontend dependencies
+├── .env                  # Environment variables
+├── package.json          # Root package.json
+└── README.md            # This file
 ```
 
-### Database Schema
-```javascript
-// User Model
-{
-  username: String,
-  email: String,
-  publicKey: String,
-  certificate: String,
-  certificateSerial: String,
-  issuedAt: Date,
-  expiresAt: Date,
-  isRevoked: Boolean
-}
+## 🐛 Troubleshooting
 
-// File Model
-{
-  filename: String,
-  encryptedData: String,
-  encryptedKey: String,
-  owner: ObjectId,
-  sharedWith: [{ user: ObjectId, encryptedKey: String }],
-  digitalSignature: String,
-  checksum: String
-}
+### Common Issues
 
-// Message Model
-{
-  sender: ObjectId,
-  recipient: ObjectId,
-  encryptedContent: String,
-  encryptedKey: String,
-  digitalSignature: String,
-  messageHash: String
-}
+1. **MongoDB Connection Error**
+   - Ensure MongoDB is running
+   - Check connection string in `.env`
+   - Verify network connectivity
+
+2. **Certificate/Key Issues**
+   - Ensure private key file is in correct PEM format
+   - Check file permissions
+   - Verify certificate hasn't expired
+
+3. **File Upload Issues**
+   - Check file size limits (10MB default)
+   - Verify disk space availability
+   - Check upload permissions
+
+4. **Frontend Build Issues**
+   - Clear node_modules and reinstall
+   - Check Node.js version compatibility
+   - Verify all dependencies are installed
+
+### Debug Mode
+```bash
+# Enable debug logging
+NODE_ENV=development npm run dev
 ```
-
-## 🎓 Educational Value
-
-This implementation demonstrates:
-- **PKI Fundamentals**: Certificate authorities, trust chains
-- **Cryptographic Protocols**: RSA, AES, SHA-256, digital signatures
-- **Security Engineering**: Threat modeling, attack mitigation
-- **Web Security**: HTTPS, CORS, JWT, rate limiting
-- **Key Management**: Generation, storage, rotation, revocation
-
-## 📄 License & Compliance
-
-- Educational use for ST6051CEM coursework
-- Implements industry-standard cryptographic practices
-- Compliant with modern security frameworks
-- Open source libraries used under respective licenses
 
 ## 🤝 Contributing
 
-For assignment submission:
 1. Fork the repository
-2. Implement additional security features
-3. Document security analysis
-4. Submit with comprehensive test results
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
 
----
+## 📄 License
 
-**Developed for ST6051CEM Practical Cryptography Assignment**  
-**Softwarica College of IT & E-Commerce**  
-**In collaboration with Coventry University**
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## ⚠️ Disclaimer
+
+This application is for educational and demonstration purposes. For production use, please conduct a thorough security audit and implement additional security measures as required by your use case.

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
 import { API_ENDPOINTS } from '../utils/api';
+import ClientCrypto from '../utils/crypto';
 
 function Login({ setToken }) {
   const [username, setUsername] = useState('');
@@ -26,19 +27,54 @@ function Login({ setToken }) {
       reader.onload = async () => {
         try {
           const privateKey = reader.result;
-          const res = await axios.post(API_ENDPOINTS.AUTH.LOGIN, { username, privateKey });
-          setToken(res.data.token);
-          localStorage.setItem('token', res.data.token);
+          
+          // Validate private key format
+          if (!ClientCrypto.isValidPEM(privateKey, 'PRIVATE KEY')) {
+            setError('Invalid private key format');
+            setLoading(false);
+            return;
+          }
+
+          // Step 1: Get challenge from server
+          const challengeRes = await axios.post(API_ENDPOINTS.AUTH.CHALLENGE);
+          const challenge = challengeRes.data.challenge;
+
+          // Step 2: Sign challenge with private key
+          const signature = ClientCrypto.signChallenge(challenge, privateKey);
+
+          // Step 3: Send login request with username, challenge, and signature
+          const loginRes = await axios.post(API_ENDPOINTS.AUTH.LOGIN, {
+            username,
+            challenge,
+            signature
+          });
+
+          // Store token and user data
+          const token = loginRes.data.data.token;
+          const userData = loginRes.data.data.user;
+          
+          localStorage.setItem('token', token);
+          localStorage.setItem('user', JSON.stringify(userData));
+          localStorage.setItem('privateKey', privateKey); // Store for file operations
+          
+          setToken(token);
           navigate('/files');
         } catch (err) {
+          console.error('Login error:', err);
           setError(err.response?.data?.error || 'Login failed');
         } finally {
           setLoading(false);
         }
       };
+      
+      reader.onerror = () => {
+        setError('Error reading private key file');
+        setLoading(false);
+      };
+      
       reader.readAsText(privateKeyFile);
     } catch (err) {
-      setError('Error reading private key file');
+      setError('Error processing login request');
       setLoading(false);
     }
   };
@@ -111,6 +147,24 @@ function Login({ setToken }) {
                   required
                 />
               </div>
+              <p className="mt-2 text-xs text-white/60">
+                Upload the private key file downloaded during registration
+              </p>
+            </div>
+            
+            <div className="bg-yellow-500/10 backdrop-blur-sm border border-yellow-400/30 rounded-xl p-4">
+              <div className="flex items-start">
+                <svg className="h-5 w-5 text-yellow-400 mr-3 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <div>
+                  <h4 className="text-sm font-medium text-yellow-200 mb-1">Security Notice</h4>
+                  <p className="text-xs text-yellow-300/80">
+                    Your private key is processed locally and used for cryptographic authentication. 
+                    It never leaves your device in plain text.
+                  </p>
+                </div>
+              </div>
             </div>
             
             <button
@@ -124,7 +178,7 @@ function Login({ setToken }) {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Signing in...
+                  Authenticating...
                 </div>
               ) : (
                 <>

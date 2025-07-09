@@ -26,9 +26,10 @@ class CryptoUtils {
   // Encrypt data using AES
   static encryptAES(data, key) {
     const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipher('aes-256-cbc', key);
+    const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
     let encrypted = cipher.update(data, 'utf8', 'hex');
     encrypted += cipher.final('hex');
+    
     return {
       iv: iv.toString('hex'),
       encryptedData: encrypted
@@ -37,7 +38,7 @@ class CryptoUtils {
 
   // Decrypt data using AES
   static decryptAES(encryptedData, key, iv) {
-    const decipher = crypto.createDecipher('aes-256-cbc', key);
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, Buffer.from(iv, 'hex'));
     let decrypted = decipher.update(encryptedData, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
     return decrypted;

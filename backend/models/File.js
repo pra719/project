@@ -4,6 +4,7 @@ const fileSchema = new mongoose.Schema({
   filename: { type: String, required: true },
   originalName: { type: String, required: true },
   encryptedData: { type: String, required: true },
+  iv: { type: String, required: true }, // Initialization Vector for AES decryption
   encryptedKey: { type: String, required: true }, // AES key encrypted with owner's public key
   fileSize: { type: Number, required: true },
   mimeType: { type: String, required: true },

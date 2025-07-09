@@ -4,18 +4,50 @@ export const API_ENDPOINTS = {
   AUTH: {
     LOGIN: `${API_BASE_URL}/api/auth/login`,
     REGISTER: `${API_BASE_URL}/api/auth/register`,
+    CHALLENGE: `${API_BASE_URL}/api/auth/challenge`,
+    PUBLIC_KEY: (username) => `${API_BASE_URL}/api/auth/publickey/${username}`,
+    CA_CERT: `${API_BASE_URL}/api/auth/ca-certificate`,
   },
-  FILES: {
-    UPLOAD: `${API_BASE_URL}/api/files/upload`,
-    LIST: `${API_BASE_URL}/api/files/list`,
-    DOWNLOAD: (fileId) => `${API_BASE_URL}/api/files/download/${fileId}`,
-    SHARE: `${API_BASE_URL}/api/files/share`,
+  FILE: {
+    UPLOAD: `${API_BASE_URL}/api/file/upload`,
+    LIST: `${API_BASE_URL}/api/file/list`,
+    DOWNLOAD: (fileId) => `${API_BASE_URL}/api/file/download/${fileId}`,
+    INFO: (fileId) => `${API_BASE_URL}/api/file/info/${fileId}`,
+    SHARE: (fileId) => `${API_BASE_URL}/api/file/share/${fileId}`,
+    DELETE: (fileId) => `${API_BASE_URL}/api/file/${fileId}`,
   },
-  MESSAGES: {
-    SEND: `${API_BASE_URL}/api/messages/send`,
-    LIST: `${API_BASE_URL}/api/messages/list`,
-    DECRYPT: (messageId) => `${API_BASE_URL}/api/messages/${messageId}/decrypt`,
+  MESSAGE: {
+    SEND: `${API_BASE_URL}/api/message/send`,
+    LIST: `${API_BASE_URL}/api/message/list`,
+    DELETE: (messageId) => `${API_BASE_URL}/api/message/${messageId}`,
   }
 };
+
+// Configure axios defaults
+import axios from 'axios';
+
+axios.defaults.baseURL = API_BASE_URL;
+axios.defaults.headers.common['Content-Type'] = 'application/json';
+
+// Add auth token to requests
+axios.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Handle auth errors
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
 
 export default API_BASE_URL;
