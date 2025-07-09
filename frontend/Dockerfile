@@ -3,8 +3,11 @@ FROM node:16
 # Create app directory
 WORKDIR /app
 
-# Create a non-root user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# Create a non-root user and their home directory
+RUN groupadd -r appuser && \
+    useradd -r -g appuser appuser && \
+    mkdir -p /home/appuser && \
+    chown -R appuser:appuser /home/appuser
 
 # Copy package files
 COPY package*.json ./
