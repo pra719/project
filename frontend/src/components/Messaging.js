@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { API_ENDPOINTS } from '../utils/api';
+import ClientCrypto from '../utils/crypto';
 
-function Messaging() {
+function Messaging({ token }) {
   const [messages, setMessages] = useState([]);
-  const [recipientUsername, setRecipientUsername] = useState('');
-  const [messageContent, setMessageContent] = useState('');
-  const [privateKeyFile, setPrivateKeyFile] = useState(null);
+  const [newMessage, setNewMessage] = useState('');
+  const [recipient, setRecipient] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const token = localStorage.getItem('token');
+  const privateKey = localStorage.getItem('privateKey');
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
 
   useEffect(() => {
     fetchMessages();
@@ -21,12 +22,10 @@ function Messaging() {
   const fetchMessages = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(API_ENDPOINTS.MESSAGES.LIST, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setMessages(res.data);
+      const res = await axios.get(API_ENDPOINTS.MESSAGE.LIST);
+      setMessages(res.data.data || []);
     } catch (err) {
-      setError('Failed to fetch messages');
+      setError('Failed to fetch messages: ' + (err.response?.data?.error || err.message));
     } finally {
       setLoading(false);
     }
@@ -34,299 +33,296 @@ function Messaging() {
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
+    if (!newMessage.trim() || !recipient.trim() || !privateKey) {
+      setError('Please enter a message, recipient, and ensure you are logged in');
+      return;
+    }
+
     setSending(true);
     setError('');
     setSuccess('');
 
     try {
-      if (!privateKeyFile) {
-        setError('Please select your private key file');
-        setSending(false);
-        return;
-      }
+      // Get recipient's public key
+      const recipientRes = await axios.get(API_ENDPOINTS.AUTH.PUBLIC_KEY(recipient));
+      const recipientPublicKey = recipientRes.data.data.publicKey;
 
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const formData = new FormData();
-          formData.append('recipientUsername', recipientUsername);
-          formData.append('content', messageContent);
-          formData.append('privateKey', privateKeyFile);
+      // Encrypt message with recipient's public key
+      const encryptedMessage = ClientCrypto.encryptWithPublicKey(newMessage, recipientPublicKey);
 
-          await axios.post(API_ENDPOINTS.MESSAGES.SEND, formData, {
-            headers: {
-              'Content-Type': 'multipart/form-data',
-              Authorization: `Bearer ${token}`
-            }
-          });
+      // Create digital signature
+      const signature = ClientCrypto.createSignature(newMessage, privateKey);
 
-          setSuccess('Message sent successfully!');
-          setRecipientUsername('');
-          setMessageContent('');
-          setPrivateKeyFile(null);
-          fetchMessages(); // Refresh messages
-          
-          setTimeout(() => setSuccess(''), 3000);
-        } catch (err) {
-          setError(err.response?.data?.error || 'Failed to send message');
-        } finally {
-          setSending(false);
-        }
-      };
-      reader.readAsText(privateKeyFile);
+      const res = await axios.post(API_ENDPOINTS.MESSAGE.SEND, {
+        recipient,
+        encryptedContent: encryptedMessage,
+        signature,
+        privateKey
+      });
+
+      setSuccess(`Message sent to ${recipient} successfully!`);
+      setNewMessage('');
+      setRecipient('');
+      fetchMessages();
     } catch (err) {
-      setError('Failed to read private key file');
+      setError('Send failed: ' + (err.response?.data?.error || err.message));
+    } finally {
       setSending(false);
     }
   };
 
-  const handleDecryptMessage = async (messageId) => {
-    const message = messages.find(m => m._id === messageId);
-    if (!message || !privateKeyFile) {
-      setError('Please select your private key file first');
+  const handleDeleteMessage = async (messageId) => {
+    if (!window.confirm('Are you sure you want to delete this message?')) {
       return;
     }
 
-    try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const res = await axios.post(API_ENDPOINTS.MESSAGES.DECRYPT(messageId), 
-            { privateKey: reader.result },
-            {
-              headers: { Authorization: `Bearer ${token}` }
-            }
-          );
+    setLoading(true);
+    setError('');
 
-          setMessages(messages.map(m => 
-            m._id === messageId 
-              ? { ...m, decryptedContent: res.data.decryptedContent, isDecrypted: true }
-              : m
-          ));
-        } catch (err) {
-          setError(err.response?.data?.error || 'Failed to decrypt message');
-        }
-      };
-      reader.readAsText(privateKeyFile);
+    try {
+      await axios.delete(API_ENDPOINTS.MESSAGE.DELETE(messageId));
+      setSuccess('Message deleted successfully!');
+      fetchMessages();
     } catch (err) {
-      setError('Failed to read private key file');
+      setError('Delete failed: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setLoading(false);
     }
   };
 
+  const decryptMessage = (message) => {
+    try {
+      if (!privateKey) {
+        return '[Unable to decrypt - private key not available]';
+      }
+      return ClientCrypto.decryptWithPrivateKey(message.encryptedContent, privateKey);
+    } catch (err) {
+      return '[Unable to decrypt - invalid key or corrupted message]';
+    }
+  };
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
   return (
-    <div className="min-h-screen gradient-bg py-8 px-4">
-      <div className="max-w-6xl mx-auto">
-        <div className="text-center mb-8 animate-fade-in">
-          <h1 className="text-5xl font-bold text-white text-shadow mb-4">Secure Messaging</h1>
-          <p className="text-xl text-white/80">Send and receive encrypted messages</p>
+    <div className="container mx-auto px-4 py-8 max-w-4xl">
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold text-white mb-2 text-shadow">Secure Messaging</h1>
+        <p className="text-white/80 text-lg">Send and receive encrypted messages securely</p>
+      </div>
+
+      {/* Alerts */}
+      {error && (
+        <div className="mb-6 p-4 bg-red-500/20 backdrop-blur-sm border border-red-400/30 rounded-xl animate-slide-up">
+          <div className="flex items-center">
+            <svg className="h-5 w-5 text-red-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm text-red-200">{error}</p>
+          </div>
+        </div>
+      )}
+
+      {success && (
+        <div className="mb-6 p-4 bg-green-500/20 backdrop-blur-sm border border-green-400/30 rounded-xl animate-slide-up">
+          <div className="flex items-center">
+            <svg className="h-5 w-5 text-green-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm text-green-200">{success}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Send Message Form */}
+      <div className="glass-card mb-8">
+        <div className="flex items-center mb-6">
+          <svg className="h-6 w-6 text-blue-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+          </svg>
+          <h2 className="text-xl font-semibold text-white">Send New Message</h2>
         </div>
 
-        {/* Send Message Section */}
-        <div className="card mb-8 animate-slide-up">
-          <div className="flex items-center mb-6">
-            <div className="h-10 w-10 bg-gradient-to-r from-purple-500 to-purple-600 rounded-xl flex items-center justify-center mr-4 shadow-lg">
-              <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
-            </div>
-            <h2 className="text-3xl font-bold text-gradient">Send Message</h2>
+        <form onSubmit={handleSendMessage} className="space-y-4">
+          <div>
+            <label htmlFor="recipient" className="block text-sm font-medium text-white/90 mb-2">
+              Recipient Username
+            </label>
+            <input
+              id="recipient"
+              type="text"
+              placeholder="Enter recipient's username"
+              value={recipient}
+              onChange={(e) => setRecipient(e.target.value)}
+              className="input-field focus-ring"
+              required
+            />
           </div>
 
-          {error && (
-            <div className="mb-6 p-4 bg-red-500/20 backdrop-blur-sm border border-red-400/30 rounded-xl animate-slide-up">
-              <div className="flex items-center">
-                <svg className="h-5 w-5 text-red-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="text-sm text-red-600">{error}</p>
-              </div>
-            </div>
-          )}
+          <div>
+            <label htmlFor="message" className="block text-sm font-medium text-white/90 mb-2">
+              Message
+            </label>
+            <textarea
+              id="message"
+              placeholder="Type your message here..."
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              rows={4}
+              className="input-field focus-ring resize-none"
+              required
+            />
+            <p className="mt-2 text-xs text-white/60">
+              Message will be encrypted end-to-end and digitally signed
+            </p>
+          </div>
 
-          {success && (
-            <div className="mb-6 p-4 bg-green-500/20 backdrop-blur-sm border border-green-400/30 rounded-xl animate-slide-up">
-              <div className="flex items-center">
-                <svg className="h-5 w-5 text-green-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="text-sm text-green-600">{success}</p>
-              </div>
-            </div>
-          )}
-
-          <form onSubmit={handleSendMessage} className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="space-y-6">
-              <div>
-                <label htmlFor="recipient" className="block text-sm font-medium text-gray-700 mb-2">
-                  Recipient Username
-                </label>
-                <input
-                  id="recipient"
-                  type="text"
-                  placeholder="Enter recipient's username"
-                  value={recipientUsername}
-                  onChange={(e) => setRecipientUsername(e.target.value)}
-                  className="input-field focus-ring"
-                  required
-                />
-              </div>
-
-              <div>
-                <label htmlFor="privateKey" className="block text-sm font-medium text-gray-700 mb-2">
-                  Your Private Key File
-                </label>
-                <input
-                  id="privateKey"
-                  type="file"
-                  onChange={(e) => setPrivateKeyFile(e.target.files[0])}
-                  className="input-field focus-ring file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"
-                  accept=".pem,.key,.txt"
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <label htmlFor="message" className="block text-sm font-medium text-gray-700 mb-2">
-                Message Content
-              </label>
-              <textarea
-                id="message"
-                placeholder="Type your secure message here..."
-                value={messageContent}
-                onChange={(e) => setMessageContent(e.target.value)}
-                rows={8}
-                className="input-field focus-ring resize-none custom-scrollbar"
-                required
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <button
-                type="submit"
-                disabled={sending}
-                className="btn-primary w-full py-4 text-lg font-semibold bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800"
-              >
-                {sending ? (
-                  <div className="flex items-center justify-center">
-                    <svg className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Sending...
-                  </div>
-                ) : (
-                  <>
-                    <svg className="h-5 w-5 mr-2 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                    </svg>
-                    Send Secure Message
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* Messages Section */}
-        <div className="card animate-slide-up" style={{animationDelay: '0.2s'}}>
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center">
-              <div className="h-10 w-10 bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-xl flex items-center justify-center mr-4 shadow-lg">
-                <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-4.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 009.586 13H7" />
-                </svg>
-              </div>
-              <h2 className="text-3xl font-bold text-gradient">Received Messages</h2>
-            </div>
-            <button
-              onClick={fetchMessages}
-              disabled={loading}
-              className="btn-secondary bg-indigo-100 hover:bg-indigo-200 text-indigo-700 border-indigo-300"
-            >
-              {loading ? (
-                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <button
+            type="submit"
+            disabled={sending || !newMessage.trim() || !recipient.trim()}
+            className="btn-primary w-full py-3"
+          >
+            {sending ? (
+              <div className="flex items-center justify-center">
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-              ) : (
-                <>
-                  <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Refresh
-                </>
-              )}
-            </button>
-          </div>
-
-          {messages.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="mx-auto h-24 w-24 bg-gray-100 rounded-2xl flex items-center justify-center mb-6">
-                <svg className="h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-4.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 009.586 13H7" />
-                </svg>
+                Encrypting & Sending...
               </div>
-              <h3 className="text-xl font-medium text-gray-900 mb-2">No messages yet</h3>
-              <p className="text-gray-500">You haven't received any messages yet. Messages sent to you will appear here.</p>
+            ) : (
+              <>
+                <svg className="h-5 w-5 mr-2 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+                Send Message
+              </>
+            )}
+          </button>
+        </form>
+      </div>
+
+      {/* Messages List */}
+      <div className="glass-card">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center">
+            <svg className="h-6 w-6 text-green-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <h2 className="text-xl font-semibold text-white">Messages</h2>
+          </div>
+          <button
+            onClick={fetchMessages}
+            disabled={loading}
+            className="text-white/70 hover:text-white p-2 rounded-lg hover:bg-white/10 transition-colors duration-200"
+            title="Refresh"
+          >
+            {loading ? (
+              <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            ) : (
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            )}
+          </button>
+        </div>
+
+        <div className="space-y-4 max-h-96 overflow-y-auto">
+          {messages.length === 0 ? (
+            <div className="text-center py-8">
+              <svg className="h-12 w-12 text-white/40 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              <p className="text-white/60">No messages yet</p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {messages.map((message, index) => (
-                <div key={message._id} className="message-card animate-slide-up" style={{animationDelay: `${0.1 * index}s`}}>
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center">
-                      <div className="h-8 w-8 bg-indigo-100 rounded-lg flex items-center justify-center mr-3">
-                        <svg className="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
+            messages.map((message) => {
+              const isSentByUser = message.sender?.username === user.username || message.sender === user.username;
+              const decryptedContent = decryptMessage(message);
+              
+              return (
+                <div
+                  key={message._id}
+                  className={`relative p-4 rounded-lg border ${
+                    isSentByUser
+                      ? 'bg-blue-500/20 border-blue-400/30 ml-8'
+                      : 'bg-white/5 border-white/20 mr-8'
+                  } hover:bg-white/10 transition-all duration-200`}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                        isSentByUser ? 'bg-blue-500' : 'bg-green-500'
+                      }`}>
+                        <span className="text-white text-sm font-medium">
+                          {isSentByUser 
+                            ? user.username?.charAt(0).toUpperCase() 
+                            : (message.sender?.username || message.sender)?.charAt(0).toUpperCase()
+                          }
+                        </span>
                       </div>
                       <div>
-                        <h3 className="text-sm font-semibold text-gray-900">
-                          From: {message.senderId?.username || 'Unknown'}
-                        </h3>
-                        <p className="text-xs text-gray-500">
-                          {new Date(message.createdAt).toLocaleString()}
+                        <p className="text-white font-medium text-sm">
+                          {isSentByUser ? 'You' : (message.sender?.username || message.sender)}
+                        </p>
+                        <p className="text-white/60 text-xs">
+                          {formatDate(message.createdAt)}
                         </p>
                       </div>
                     </div>
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      message.isDecrypted 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {message.isDecrypted ? 'Decrypted' : 'Encrypted'}
-                    </span>
-                  </div>
-
-                  <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                    {message.isDecrypted ? (
-                      <p className="text-sm text-gray-800 whitespace-pre-wrap">{message.decryptedContent}</p>
-                    ) : (
-                      <div className="text-center py-4">
-                        <svg className="h-8 w-8 text-gray-400 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    
+                    {isSentByUser && (
+                      <button
+                        onClick={() => handleDeleteMessage(message._id)}
+                        className="text-red-400 hover:text-red-300 p-1 rounded-lg hover:bg-white/10 transition-colors duration-200"
+                        title="Delete"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
-                        <p className="text-sm text-gray-500">Message is encrypted</p>
-                        <p className="text-xs text-gray-400 mt-1">Use your private key to decrypt</p>
-                      </div>
+                      </button>
                     )}
                   </div>
 
-                  {!message.isDecrypted && (
-                    <button
-                      onClick={() => handleDecryptMessage(message._id)}
-                      className="btn-secondary w-full py-2 text-sm bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200"
-                    >
-                      <svg className="h-4 w-4 mr-2 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                      </svg>
-                      Decrypt Message
-                    </button>
+                  <div className="mb-3">
+                    <p className="text-white text-sm leading-relaxed whitespace-pre-wrap">
+                      {decryptedContent}
+                    </p>
+                  </div>
+
+                  {!isSentByUser && (
+                    <div className="text-xs text-white/50">
+                      <p>To: {message.recipient?.username || message.recipient}</p>
+                    </div>
                   )}
+
+                  <div className="flex items-center space-x-4 text-xs text-white/40 mt-2">
+                    <div className="flex items-center">
+                      <svg className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.018-4.118a3.508 3.508 0 00-4.95 0L5.36 15.49a3.508 3.508 0 004.95 4.95l5.708-5.707a3.508 3.508 0 000-4.95z" />
+                      </svg>
+                      <span>Encrypted</span>
+                    </div>
+                    <div className="flex items-center">
+                      <svg className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>Verified</span>
+                    </div>
+                  </div>
                 </div>
-              ))}
-            </div>
+              );
+            })
           )}
         </div>
       </div>

@@ -5,6 +5,7 @@ import { API_ENDPOINTS } from '../utils/api';
 
 function Register() {
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
@@ -17,18 +18,40 @@ function Register() {
     setSuccess('');
     
     try {
-      const res = await axios.post(API_ENDPOINTS.AUTH.REGISTER, { username });
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        setError('Please enter a valid email address');
+        setLoading(false);
+        return;
+      }
+
+      const res = await axios.post(API_ENDPOINTS.AUTH.REGISTER, { 
+        username, 
+        email 
+      });
       
-      // Create a download link for the private key
-      const blob = new Blob([res.data.privateKey], { type: 'text/plain' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${username}_private_key.pem`;
-      link.click();
-      window.URL.revokeObjectURL(url);
+      // Create downloads for both private key and certificate
+      const privateKeyBlob = new Blob([res.data.data.privateKey], { type: 'text/plain' });
+      const certBlob = new Blob([res.data.data.certificate], { type: 'text/plain' });
       
-      setSuccess('Registration successful! Your private key has been downloaded. Please keep it safe.');
+      // Download private key
+      const privateKeyUrl = window.URL.createObjectURL(privateKeyBlob);
+      const privateKeyLink = document.createElement('a');
+      privateKeyLink.href = privateKeyUrl;
+      privateKeyLink.download = `${username}_private_key.pem`;
+      privateKeyLink.click();
+      window.URL.revokeObjectURL(privateKeyUrl);
+      
+      // Download certificate
+      const certUrl = window.URL.createObjectURL(certBlob);
+      const certLink = document.createElement('a');
+      certLink.href = certUrl;
+      certLink.download = `${username}_certificate.pem`;
+      certLink.click();
+      window.URL.revokeObjectURL(certUrl);
+      
+      setSuccess('Registration successful! Your private key and certificate have been downloaded. Please keep them safe.');
       setTimeout(() => {
         navigate('/login');
       }, 3000);
@@ -110,6 +133,24 @@ function Register() {
                 3-20 characters, letters, numbers, and underscores only
               </p>
             </div>
+
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-white/90 mb-2">
+                Email Address
+              </label>
+              <input
+                id="email"
+                type="email"
+                placeholder="Enter your email address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="input-field focus-ring"
+                required
+              />
+              <p className="mt-2 text-xs text-white/60">
+                Used for certificate generation and account recovery
+              </p>
+            </div>
             
             <div className="bg-blue-500/10 backdrop-blur-sm border border-blue-400/30 rounded-xl p-4">
               <div className="flex items-start">
@@ -119,8 +160,8 @@ function Register() {
                 <div>
                   <h4 className="text-sm font-medium text-blue-200 mb-1">Security Notice</h4>
                   <p className="text-xs text-blue-300/80">
-                    A private key will be generated and downloaded automatically. 
-                    Store it securely - you'll need it to log in and access your files.
+                    Your private key and certificate will be generated and downloaded automatically. 
+                    Store them securely - you'll need them to log in and access your files.
                   </p>
                 </div>
               </div>

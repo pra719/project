@@ -1,23 +1,20 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { saveAs } from 'file-saver';
 import { API_ENDPOINTS } from '../utils/api';
+import ClientCrypto from '../utils/crypto';
 
-function FileShare() {
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [description, setDescription] = useState('');
-  const [sharedWith, setSharedWith] = useState('');
-  const [files, setFiles] = useState([]);
-  const [privateKeyFile, setPrivateKeyFile] = useState(null);
-  const [uploading, setUploading] = useState(false);
+function FileShare({ token }) {
+  const [files, setFiles] = useState({ ownedFiles: [], sharedFiles: [] });
+  const [uploadFile, setUploadFile] = useState(null);
+  const [shareUsername, setShareUsername] = useState('');
+  const [selectedFileId, setSelectedFileId] = useState('');
   const [loading, setLoading] = useState(false);
-  const [downloading, setDownloading] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const fileInputRef = useRef(null);
-  const keyInputRef = useRef(null);
-  const token = localStorage.getItem('token');
+  const privateKey = localStorage.getItem('privateKey');
 
   useEffect(() => {
     fetchFiles();
@@ -26,347 +23,455 @@ function FileShare() {
   const fetchFiles = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(API_ENDPOINTS.FILES.LIST, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setFiles(res.data);
+      const res = await axios.get(API_ENDPOINTS.FILE.LIST);
+      setFiles(res.data.data);
     } catch (err) {
-      setError('Failed to fetch files');
+      setError('Failed to fetch files: ' + (err.response?.data?.error || err.message));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleUpload = async (e) => {
+  const handleFileUpload = async (e) => {
     e.preventDefault();
+    if (!uploadFile || !privateKey) {
+      setError('Please select a file and ensure you are logged in');
+      return;
+    }
+
     setUploading(true);
     setError('');
     setSuccess('');
 
     try {
-      if (!selectedFile || !privateKeyFile) {
-        setError('Please select both a file to upload and your private key');
-        setUploading(false);
-        return;
-      }
-
       const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('privateKey', privateKeyFile);
-      formData.append('description', description);
-      
-      if (sharedWith.trim()) {
-        formData.append('sharedWith', sharedWith);
-      }
+      formData.append('file', uploadFile);
+      formData.append('privateKey', privateKey);
 
-      const res = await axios.post(API_ENDPOINTS.FILES.UPLOAD, formData, {
+      const res = await axios.post(API_ENDPOINTS.FILE.UPLOAD, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${token}`
-        }
+        },
       });
 
-      setSuccess('File uploaded and encrypted successfully!');
-      setSelectedFile(null);
-      setDescription('');
-      setSharedWith('');
-      setPrivateKeyFile(null);
-      
-      // Reset file inputs
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      if (keyInputRef.current) keyInputRef.current.value = '';
-      
-      fetchFiles(); // Refresh file list
-      setTimeout(() => setSuccess(''), 3000);
+      setSuccess(`File "${res.data.data.filename}" uploaded successfully!`);
+      setUploadFile(null);
+      document.getElementById('fileInput').value = '';
+      fetchFiles();
     } catch (err) {
-      setError(err.response?.data?.error || 'Upload failed');
+      setError('Upload failed: ' + (err.response?.data?.error || err.message));
     } finally {
       setUploading(false);
     }
   };
 
-  const handleDownload = async (fileId, filename) => {
-    if (!privateKeyFile) {
-      setError('Please select your private key file first');
+  const handleFileDownload = async (fileId, filename) => {
+    if (!privateKey) {
+      setError('Private key not found. Please log in again.');
       return;
     }
 
-    try {
-      setDownloading(fileId);
-      
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const formData = new FormData();
-          formData.append('privateKey', privateKeyFile);
-          
-          const res = await axios.post(API_ENDPOINTS.FILES.DOWNLOAD(fileId), formData, {
-            headers: { 
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'multipart/form-data'
-            },
-            responseType: 'blob'
-          });
+    setDownloading(fileId);
+    setError('');
 
-          // Create download link
-          const url = window.URL.createObjectURL(new Blob([res.data]));
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = filename;
-          link.click();
-          window.URL.revokeObjectURL(url);
-          
-          setSuccess('File downloaded successfully!');
-          setTimeout(() => setSuccess(''), 3000);
-        } catch (err) {
-          setError(err.response?.data?.error || 'Download failed');
-        } finally {
-          setDownloading(null);
+    try {
+      const res = await axios.post(
+        API_ENDPOINTS.FILE.DOWNLOAD(fileId),
+        { privateKey },
+        { 
+          responseType: 'blob',
+          headers: {
+            'Content-Type': 'application/json',
+          }
         }
-      };
-      reader.readAsText(privateKeyFile);
+      );
+
+      // Create download link
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      setSuccess(`File "${filename}" downloaded successfully!`);
     } catch (err) {
-      setError('Failed to read private key file');
-      setDownloading(null);
+      if (err.response?.data) {
+        // Handle JSON error response
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const errorData = JSON.parse(reader.result);
+            setError('Download failed: ' + errorData.error);
+          } catch {
+            setError('Download failed: Unknown error');
+          }
+        };
+        reader.readAsText(err.response.data);
+      } else {
+        setError('Download failed: ' + (err.response?.data?.error || err.message));
+      }
+    } finally {
+      setDownloading('');
     }
   };
 
-  return (
-    <div className="min-h-screen gradient-bg py-8 px-4">
-      <div className="max-w-6xl mx-auto">
-        <div className="text-center mb-8 animate-fade-in">
-          <h1 className="text-5xl font-bold text-white text-shadow mb-4">Secure File Sharing</h1>
-          <p className="text-xl text-white/80">Share files securely with end-to-end encryption</p>
-        </div>
+  const handleShareFile = async (e) => {
+    e.preventDefault();
+    if (!selectedFileId || !shareUsername || !privateKey) {
+      setError('Please select a file, enter a username, and ensure you are logged in');
+      return;
+    }
 
-        {/* Upload Section */}
-        <div className="card mb-8 animate-slide-up">
+    setLoading(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const res = await axios.post(
+        API_ENDPOINTS.FILE.SHARE(selectedFileId),
+        {
+          usernames: [shareUsername],
+          privateKey
+        }
+      );
+
+      setSuccess(`File shared with ${shareUsername} successfully!`);
+      setShareUsername('');
+      setSelectedFileId('');
+      fetchFiles();
+    } catch (err) {
+      setError('Share failed: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteFile = async (fileId, filename) => {
+    if (!window.confirm(`Are you sure you want to delete "${filename}"?`)) {
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      await axios.delete(API_ENDPOINTS.FILE.DELETE(fileId));
+      setSuccess(`File "${filename}" deleted successfully!`);
+      fetchFiles();
+    } catch (err) {
+      setError('Delete failed: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  return (
+    <div className="container mx-auto px-4 py-8 max-w-6xl">
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold text-white mb-2 text-shadow">Secure File Sharing</h1>
+        <p className="text-white/80 text-lg">Upload, share, and manage your encrypted files securely</p>
+      </div>
+
+      {/* Alerts */}
+      {error && (
+        <div className="mb-6 p-4 bg-red-500/20 backdrop-blur-sm border border-red-400/30 rounded-xl animate-slide-up">
+          <div className="flex items-center">
+            <svg className="h-5 w-5 text-red-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm text-red-200">{error}</p>
+          </div>
+        </div>
+      )}
+
+      {success && (
+        <div className="mb-6 p-4 bg-green-500/20 backdrop-blur-sm border border-green-400/30 rounded-xl animate-slide-up">
+          <div className="flex items-center">
+            <svg className="h-5 w-5 text-green-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm text-green-200">{success}</p>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        {/* File Upload Card */}
+        <div className="glass-card">
           <div className="flex items-center mb-6">
-            <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl flex items-center justify-center mr-4 shadow-lg">
-              <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-            </div>
-            <h2 className="text-3xl font-bold text-gradient">Upload File</h2>
+            <svg className="h-6 w-6 text-blue-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <h2 className="text-xl font-semibold text-white">Upload File</h2>
           </div>
 
-          {error && (
-            <div className="mb-6 p-4 bg-red-500/20 backdrop-blur-sm border border-red-400/30 rounded-xl animate-slide-up">
-              <div className="flex items-center">
-                <svg className="h-5 w-5 text-red-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="text-sm text-red-600">{error}</p>
-              </div>
-            </div>
-          )}
-
-          {success && (
-            <div className="mb-6 p-4 bg-green-500/20 backdrop-blur-sm border border-green-400/30 rounded-xl animate-slide-up">
-              <div className="flex items-center">
-                <svg className="h-5 w-5 text-green-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="text-sm text-green-600">{success}</p>
-              </div>
-            </div>
-          )}
-
-          <form onSubmit={handleUpload} className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="space-y-6">
-              <div>
-                <label htmlFor="file" className="block text-sm font-medium text-gray-700 mb-2">
-                  Select File
-                </label>
-                <input
-                  ref={fileInputRef}
-                  id="file"
-                  type="file"
-                  onChange={(e) => setSelectedFile(e.target.files[0])}
-                  className="input-field focus-ring file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                  required
-                />
-                {selectedFile && (
-                  <p className="mt-2 text-sm text-gray-600">
-                    Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="sharedWith" className="block text-sm font-medium text-gray-700 mb-2">
-                  Share with (Username)
-                </label>
-                <input
-                  id="sharedWith"
-                  type="text"
-                  placeholder="Enter username to share with (optional)"
-                  value={sharedWith}
-                  onChange={(e) => setSharedWith(e.target.value)}
-                  className="input-field focus-ring"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="privateKey" className="block text-sm font-medium text-gray-700 mb-2">
-                  Your Private Key File
-                </label>
-                <input
-                  ref={keyInputRef}
-                  id="privateKey"
-                  type="file"
-                  onChange={(e) => setPrivateKeyFile(e.target.files[0])}
-                  className="input-field focus-ring file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                  accept=".pem,.key,.txt"
-                  required
-                />
-              </div>
-            </div>
-
+          <form onSubmit={handleFileUpload} className="space-y-4">
             <div>
-              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
-                Description (Optional)
+              <label htmlFor="fileInput" className="block text-sm font-medium text-white/90 mb-2">
+                Select File
               </label>
-              <textarea
-                id="description"
-                placeholder="Add a description for this file..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={8}
-                className="input-field focus-ring resize-none custom-scrollbar"
+              <input
+                id="fileInput"
+                type="file"
+                onChange={(e) => setUploadFile(e.target.files[0])}
+                className="input-field focus-ring file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                required
               />
+              <p className="mt-2 text-xs text-white/60">
+                Maximum file size: 10MB. File will be encrypted automatically.
+              </p>
             </div>
 
-            <div className="md:col-span-2">
-              <button
-                type="submit"
-                disabled={uploading}
-                className="btn-primary w-full py-4 text-lg font-semibold"
-              >
-                {uploading ? (
-                  <div className="flex items-center justify-center">
-                    <svg className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Encrypting & Uploading...
-                  </div>
-                ) : (
-                  <>
-                    <svg className="h-5 w-5 mr-2 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-                    Upload & Encrypt File
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* Files Section */}
-        <div className="card animate-slide-up" style={{animationDelay: '0.2s'}}>
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center">
-              <div className="h-10 w-10 bg-gradient-to-r from-green-500 to-green-600 rounded-xl flex items-center justify-center mr-4 shadow-lg">
-                <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <h2 className="text-3xl font-bold text-gradient">Your Files</h2>
-            </div>
             <button
-              onClick={fetchFiles}
-              disabled={loading}
-              className="btn-secondary bg-green-100 hover:bg-green-200 text-green-700 border-green-300"
+              type="submit"
+              disabled={uploading || !uploadFile}
+              className="btn-primary w-full py-3"
             >
-              {loading ? (
-                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+              {uploading ? (
+                <div className="flex items-center justify-center">
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Encrypting & Uploading...
+                </div>
               ) : (
                 <>
-                  <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  <svg className="h-5 w-5 mr-2 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                   </svg>
-                  Refresh
+                  Upload File
                 </>
               )}
             </button>
+          </form>
+        </div>
+
+        {/* Share File Card */}
+        <div className="glass-card">
+          <div className="flex items-center mb-6">
+            <svg className="h-6 w-6 text-green-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
+            </svg>
+            <h2 className="text-xl font-semibold text-white">Share File</h2>
           </div>
 
-          {files.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="mx-auto h-24 w-24 bg-gray-100 rounded-2xl flex items-center justify-center mb-6">
-                <svg className="h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <h3 className="text-xl font-medium text-gray-900 mb-2">No files yet</h3>
-              <p className="text-gray-500">Upload your first file to get started with secure sharing.</p>
+          <form onSubmit={handleShareFile} className="space-y-4">
+            <div>
+              <label htmlFor="fileSelect" className="block text-sm font-medium text-white/90 mb-2">
+                Select File to Share
+              </label>
+              <select
+                id="fileSelect"
+                value={selectedFileId}
+                onChange={(e) => setSelectedFileId(e.target.value)}
+                className="input-field focus-ring"
+                required
+              >
+                <option value="">Choose a file...</option>
+                {files.ownedFiles.map((file) => (
+                  <option key={file.fileId} value={file.fileId}>
+                    {file.filename} ({formatFileSize(file.size)})
+                  </option>
+                ))}
+              </select>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {files.map((file, index) => (
-                <div key={file._id} className="file-card animate-slide-up" style={{animationDelay: `${0.1 * index}s`}}>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center min-w-0 flex-1">
-                      <div className="h-8 w-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3 flex-shrink-0">
-                        <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                      </div>
-                      <h3 className="text-sm font-semibold text-gray-900 truncate">
-                        {file.filename || 'Untitled File'}
-                      </h3>
-                    </div>
-                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full flex-shrink-0 ml-2">
-                      {new Date(file.createdAt).toLocaleDateString()}
-                    </span>
-                  </div>
-                  
-                  {file.description && (
-                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">{file.description}</p>
-                  )}
-                  
-                  <div className="mb-4">
-                    <p className="text-sm text-gray-600">
-                      Owner: <span className="font-medium text-gray-900">{file.ownerId?.username || 'You'}</span>
-                    </p>
-                    {file.sharedWith && file.sharedWith.length > 0 && (
-                      <p className="text-sm text-gray-600">
-                        Shared with: <span className="font-medium text-gray-900">{file.sharedWith.join(', ')}</span>
-                      </p>
-                    )}
-                  </div>
-                  
-                  <button
-                    onClick={() => handleDownload(file._id, file.filename)}
-                    disabled={downloading === file._id}
-                    className="btn-secondary w-full py-3 text-sm font-semibold bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white border-0"
-                  >
-                    {downloading === file._id ? (
-                      <div className="flex items-center justify-center">
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Downloading...
-                      </div>
-                    ) : (
-                      <>
-                        <svg className="h-4 w-4 mr-2 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        Download & Decrypt
-                      </>
-                    )}
-                  </button>
+
+            <div>
+              <label htmlFor="shareUsername" className="block text-sm font-medium text-white/90 mb-2">
+                Share with Username
+              </label>
+              <input
+                id="shareUsername"
+                type="text"
+                placeholder="Enter username to share with"
+                value={shareUsername}
+                onChange={(e) => setShareUsername(e.target.value)}
+                className="input-field focus-ring"
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || !selectedFileId || !shareUsername}
+              className="btn-secondary w-full py-3"
+            >
+              {loading ? (
+                <div className="flex items-center justify-center">
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Sharing...
                 </div>
-              ))}
+              ) : (
+                <>
+                  <svg className="h-5 w-5 mr-2 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
+                  </svg>
+                  Share File
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {/* Files Lists */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+        {/* Owned Files */}
+        <div className="glass-card">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center">
+              <svg className="h-6 w-6 text-purple-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <h2 className="text-xl font-semibold text-white">My Files</h2>
             </div>
-          )}
+            <span className="text-sm text-white/60 bg-white/10 px-3 py-1 rounded-full">
+              {files.ownedFiles.length} files
+            </span>
+          </div>
+
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {files.ownedFiles.length === 0 ? (
+              <div className="text-center py-8">
+                <svg className="h-12 w-12 text-white/40 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                </svg>
+                <p className="text-white/60">No files uploaded yet</p>
+              </div>
+            ) : (
+              files.ownedFiles.map((file) => (
+                <div key={file.fileId} className="bg-white/5 backdrop-blur-sm border border-white/20 rounded-lg p-4 hover:bg-white/10 transition-all duration-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-medium truncate">{file.filename}</h3>
+                      <div className="flex items-center space-x-4 text-sm text-white/60 mt-1">
+                        <span>{formatFileSize(file.size)}</span>
+                        <span>{formatDate(file.createdAt)}</span>
+                        {file.sharedWithCount > 0 && (
+                          <span className="text-green-400">
+                            Shared with {file.sharedWithCount} user{file.sharedWithCount !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2 ml-4">
+                      <button
+                        onClick={() => handleFileDownload(file.fileId, file.filename)}
+                        disabled={downloading === file.fileId}
+                        className="text-blue-400 hover:text-blue-300 p-2 rounded-lg hover:bg-white/10 transition-colors duration-200"
+                        title="Download"
+                      >
+                        {downloading === file.fileId ? (
+                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        ) : (
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteFile(file.fileId, file.filename)}
+                        className="text-red-400 hover:text-red-300 p-2 rounded-lg hover:bg-white/10 transition-colors duration-200"
+                        title="Delete"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Shared Files */}
+        <div className="glass-card">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center">
+              <svg className="h-6 w-6 text-green-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
+              </svg>
+              <h2 className="text-xl font-semibold text-white">Shared with Me</h2>
+            </div>
+            <span className="text-sm text-white/60 bg-white/10 px-3 py-1 rounded-full">
+              {files.sharedFiles.length} files
+            </span>
+          </div>
+
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {files.sharedFiles.length === 0 ? (
+              <div className="text-center py-8">
+                <svg className="h-12 w-12 text-white/40 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
+                </svg>
+                <p className="text-white/60">No files shared with you yet</p>
+              </div>
+            ) : (
+              files.sharedFiles.map((file) => (
+                <div key={file.fileId} className="bg-white/5 backdrop-blur-sm border border-white/20 rounded-lg p-4 hover:bg-white/10 transition-all duration-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-medium truncate">{file.filename}</h3>
+                      <div className="flex items-center space-x-4 text-sm text-white/60 mt-1">
+                        <span>{formatFileSize(file.size)}</span>
+                        <span>by {file.owner}</span>
+                        <span>{formatDate(file.createdAt)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2 ml-4">
+                      <button
+                        onClick={() => handleFileDownload(file.fileId, file.filename)}
+                        disabled={downloading === file.fileId}
+                        className="text-blue-400 hover:text-blue-300 p-2 rounded-lg hover:bg-white/10 transition-colors duration-200"
+                        title="Download"
+                      >
+                        {downloading === file.fileId ? (
+                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        ) : (
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>
