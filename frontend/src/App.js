@@ -4,6 +4,8 @@ import Login from './components/Login';
 import Register from './components/Register';
 import FileShare from './components/FileShare';
 import Messaging from './components/Messaging';
+import NotificationSystem from './components/NotificationSystem';
+import WelcomeHero from './components/WelcomeHero';
 import './styles.css';
 
 function Navigation({ token, setToken }) {
@@ -31,27 +33,31 @@ function Navigation({ token, setToken }) {
               </div>
               <h1 className="text-xl font-bold text-gradient">SecureShare</h1>
             </div>
-            <div className="hidden md:ml-10 md:flex md:space-x-2">
+            <div className="hidden md:ml-10 md:flex md:space-x-3">
               <Link
                 to="/files"
-                className={`nav-link ${
+                className={`nav-link group ${
                   location.pathname === '/files' ? 'active' : ''
                 }`}
               >
-                <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
+                <div className="w-6 h-6 mr-2 flex items-center justify-center rounded-lg bg-blue-500/20 group-hover:bg-blue-500/30 transition-all duration-200">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                </div>
                 Files
               </Link>
               <Link
                 to="/messages"
-                className={`nav-link ${
+                className={`nav-link group ${
                   location.pathname === '/messages' ? 'active' : ''
                 }`}
               >
-                <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
+                <div className="w-6 h-6 mr-2 flex items-center justify-center rounded-lg bg-green-500/20 group-hover:bg-green-500/30 transition-all duration-200">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                </div>
                 Messages
               </Link>
             </div>
@@ -123,10 +129,11 @@ function App() {
             />
             <Route 
               path="/" 
-              element={<Navigate to={token ? "/files" : "/login"} />} 
+              element={!token ? <WelcomeHero /> : <Navigate to="/files" />} 
             />
           </Routes>
         </main>
+        <NotificationSystem />
       </div>
     </Router>
   );
