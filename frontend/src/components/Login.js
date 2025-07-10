@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import axiosInstance, { API_ENDPOINTS, testConnectivity } from '../utils/api';
 import { useNavigate, Link } from 'react-router-dom';
-import { API_ENDPOINTS } from '../utils/api';
 import ClientCrypto from '../utils/crypto';
 
 function Login({ setToken }) {
@@ -9,7 +8,21 @@ function Login({ setToken }) {
   const [privateKeyFile, setPrivateKeyFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [testingConnection, setTestingConnection] = useState(false);
   const navigate = useNavigate();
+
+  const testConnection = async () => {
+    setTestingConnection(true);
+    try {
+      await testConnectivity();
+      setError('✓ Connection successful! Backend is reachable.');
+      setTimeout(() => setError(''), 3000);
+    } catch (err) {
+      setError('✗ Connection failed. Please check if the backend is running.');
+    } finally {
+      setTestingConnection(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -42,7 +55,7 @@ function Login({ setToken }) {
           }
 
           // Step 1: Get challenge from server
-          const challengeRes = await axios.post(API_ENDPOINTS.AUTH.CHALLENGE);
+          const challengeRes = await axiosInstance.post('/api/auth/challenge');
           
           if (!challengeRes.data.success || !challengeRes.data.challenge) {
             setError('Failed to get authentication challenge from server');
@@ -63,7 +76,7 @@ function Login({ setToken }) {
           }
 
           // Step 3: Send login request with username, challenge, and signature
-          const loginRes = await axios.post(API_ENDPOINTS.AUTH.LOGIN, {
+          const loginRes = await axiosInstance.post('/api/auth/login', {
             username: username.trim(),
             challenge,
             signature
@@ -98,12 +111,14 @@ function Login({ setToken }) {
               setError('Authentication failed. Please check your username and private key.');
             } else if (status === 429) {
               setError('Too many login attempts. Please try again later.');
+            } else if (status >= 500) {
+              setError('Server error. Please try again later or contact support.');
             } else {
               setError(errorMessage);
             }
-          } else if (err.request) {
-            // Network error
-            setError('Network error. Please check your connection and try again.');
+          } else if (err.request || err.code === 'NETWORK_ERROR' || err.code === 'ECONNREFUSED') {
+            // Network error - provide more helpful message
+            setError('Unable to connect to server. Please check that:\n1. The backend service is running\n2. You can access http://localhost:5000\n3. Your network connection is working');
           } else {
             // Other error
             setError('An unexpected error occurred. Please try again.');
@@ -152,13 +167,33 @@ function Login({ setToken }) {
         </div>
         
         <div className="glass-card">
+          {/* Connection Test Button */}
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={testConnection}
+              disabled={testingConnection}
+              className="w-full py-2 px-4 text-sm bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 rounded-lg border border-blue-400/30 transition-all duration-200"
+            >
+              {testingConnection ? 'Testing Connection...' : 'Test Backend Connection'}
+            </button>
+          </div>
+
           {error && (
-            <div className="mb-6 p-4 bg-red-500/20 backdrop-blur-sm border border-red-400/30 rounded-xl animate-slide-up">
-              <div className="flex items-center">
-                <svg className="h-5 w-5 text-red-400 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <div className={`mb-6 p-4 backdrop-blur-sm border rounded-xl animate-slide-up ${
+              error.startsWith('✓') ? 'bg-green-500/20 border-green-400/30' : 'bg-red-500/20 border-red-400/30'
+            }`}>
+              <div className="flex items-start">
+                <svg className={`h-5 w-5 mr-3 mt-0.5 flex-shrink-0 ${
+                  error.startsWith('✓') ? 'text-green-400' : 'text-red-400'
+                }`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={
+                    error.startsWith('✓') ? "M5 13l4 4L19 7" : "M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  } />
                 </svg>
-                <p className="text-sm text-red-200">{error}</p>
+                <pre className={`text-sm whitespace-pre-wrap ${
+                  error.startsWith('✓') ? 'text-green-200' : 'text-red-200'
+                }`}>{error}</pre>
               </div>
             </div>
           )}
