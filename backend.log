@@ -1,0 +1,21 @@
+nohup: ignoring input
+
+> secure-file-sharing-backend@1.0.0 start
+> node server.js
+
+
+🚀 Secure File Sharing Backend
+📡 Server running on port 5000
+🔒 Security features enabled
+🌐 Environment: development
+📁 CA Directory: /workspace/backend/ca
+════════════════════════════════════════
+✓ MongoDB connected successfully
+CA already initialized
+CA already initialized
+✓ Certificate Authority initialized
+::ffff:127.0.0.1 - - [10/Jul/2025:14:50:45 +0000] "GET /health HTTP/1.1" 200 104 "-" "axios/1.10.0"
+::ffff:127.0.0.1 - - [10/Jul/2025:14:50:45 +0000] "POST /api/auth/challenge HTTP/1.1" 200 121 "-" "axios/1.10.0"
+::ffff:127.0.0.1 - - [10/Jul/2025:14:50:45 +0000] "POST /api/auth/login HTTP/1.1" 200 886 "-" "axios/1.10.0"
+::ffff:127.0.0.1 - - [10/Jul/2025:14:50:45 +0000] "GET /api/file/list HTTP/1.1" 200 58 "-" "axios/1.10.0"
+::ffff:127.0.0.1 - - [10/Jul/2025:14:50:45 +0000] "POST /api/file/upload HTTP/1.1" 400 28 "-" "axios/1.10.0"

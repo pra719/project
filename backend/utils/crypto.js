@@ -132,7 +132,6 @@ class CryptoUtils {
   static verifyCertificate(certPem, caCertPem) {
     try {
       const cert = forge.pki.certificateFromPem(certPem);
-      const caCert = forge.pki.certificateFromPem(caCertPem);
       
       // Check if certificate is still valid
       const now = new Date();
@@ -142,11 +141,9 @@ class CryptoUtils {
 
       // Verify signature (if CA cert is provided)
       if (caCertPem) {
-        return caCert.publicKey.verify(
-          cert.tbsCertificate,
-          cert.signature,
-          forge.md.sha256.create()
-        );
+        const caCert = forge.pki.certificateFromPem(caCertPem);
+        // Use forge's built-in certificate verification
+        return caCert.verify(cert);
       }
 
       return true;

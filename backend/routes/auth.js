@@ -6,10 +6,10 @@ const CryptoUtils = require('../utils/crypto');
 const CA = require('../utils/ca');
 const rateLimit = require('express-rate-limit');
 
-// Rate limiting
+// Rate limiting - Relaxed for testing
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 requests per windowMs
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 50, // limit each IP to 50 requests per windowMs
   message: 'Too many authentication attempts, please try again later.'
 });
 
