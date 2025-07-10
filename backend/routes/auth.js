@@ -5,12 +5,17 @@ const jwt = require('jsonwebtoken');
 const CryptoUtils = require('../utils/crypto');
 const CA = require('../utils/ca');
 const rateLimit = require('express-rate-limit');
+const rateLimit = require('express-rate-limit');
 
-// Rate limiting for authentication endpoints
+const isTesting = process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development';
+
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 requests per windowMs
-  message: { error: 'Too many authentication attempts, please try again later.', success: false }
+  windowMs: isTesting ? 1 * 60 * 1000 : 15 * 60 * 1000, // 1 minute for testing, 15 minutes for production
+  max: isTesting ? 50 : 5, // 50 requests for testing, 5 for production
+  message: {
+    error: 'Too many authentication attempts, please try again later.',
+    success: false
+  }
 });
 
 // Initialize CA on startup
