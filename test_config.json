@@ -1,8 +1,0 @@
-{
-  "username": "logintest1752158856245",
-  "email": "logintest1752158856245@example.com",
-  "userId": "686fd288911f02d575846278",
-  "privateKeyFile": "test_private_key.pem",
-  "publicKeyFile": "test_public_key.pem",
-  "certificateFile": "test_certificate.pem"
-}
