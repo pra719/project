@@ -62,8 +62,23 @@ class CryptoUtils {
     return sign.sign(privateKey, 'hex');
   }
 
-  // Verify digital signature
+  // Verify digital signature - Fixed to handle base64 signatures from frontend
   static verifySignature(data, signature, publicKey) {
+    try {
+      // Use forge for compatibility with frontend
+      const forgePublicKey = forge.pki.publicKeyFromPem(publicKey);
+      const md = forge.md.sha256.create();
+      md.update(data, 'utf8');
+      const signatureBytes = forge.util.decode64(signature);
+      return forgePublicKey.verify(md.digest().bytes(), signatureBytes);
+    } catch (error) {
+      console.error('Signature verification error:', error);
+      return false;
+    }
+  }
+
+  // Legacy verify function using Node.js crypto (kept for compatibility)
+  static verifySignatureHex(data, signature, publicKey) {
     const verify = crypto.createVerify('SHA256');
     verify.update(data);
     verify.end();
