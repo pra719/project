@@ -17,6 +17,12 @@ function Login({ setToken }) {
     setError('');
     
     try {
+      if (!username.trim()) {
+        setError('Please enter your username');
+        setLoading(false);
+        return;
+      }
+
       if (!privateKeyFile) {
         setError('Please select a private key file');
         setLoading(false);
@@ -30,24 +36,44 @@ function Login({ setToken }) {
           
           // Validate private key format
           if (!ClientCrypto.isValidPEM(privateKey, 'PRIVATE KEY')) {
-            setError('Invalid private key format');
+            setError('Invalid private key format. Please ensure you selected the correct .pem file.');
             setLoading(false);
             return;
           }
 
           // Step 1: Get challenge from server
           const challengeRes = await axios.post(API_ENDPOINTS.AUTH.CHALLENGE);
+          
+          if (!challengeRes.data.success || !challengeRes.data.challenge) {
+            setError('Failed to get authentication challenge from server');
+            setLoading(false);
+            return;
+          }
+
           const challenge = challengeRes.data.challenge;
 
           // Step 2: Sign challenge with private key
-          const signature = ClientCrypto.signChallenge(challenge, privateKey);
+          let signature;
+          try {
+            signature = ClientCrypto.signChallenge(challenge, privateKey);
+          } catch (signError) {
+            setError('Failed to sign challenge. Please check your private key file.');
+            setLoading(false);
+            return;
+          }
 
           // Step 3: Send login request with username, challenge, and signature
           const loginRes = await axios.post(API_ENDPOINTS.AUTH.LOGIN, {
-            username,
+            username: username.trim(),
             challenge,
             signature
           });
+
+          if (!loginRes.data.success) {
+            setError(loginRes.data.error || 'Login failed');
+            setLoading(false);
+            return;
+          }
 
           // Store token and user data
           const token = loginRes.data.data.token;
@@ -59,16 +85,36 @@ function Login({ setToken }) {
           
           setToken(token);
           navigate('/files');
+          
         } catch (err) {
           console.error('Login error:', err);
-          setError(err.response?.data?.error || 'Login failed');
+          
+          if (err.response) {
+            // Server responded with error
+            const status = err.response.status;
+            const errorMessage = err.response.data?.error || 'Login failed';
+            
+            if (status === 401) {
+              setError('Authentication failed. Please check your username and private key.');
+            } else if (status === 429) {
+              setError('Too many login attempts. Please try again later.');
+            } else {
+              setError(errorMessage);
+            }
+          } else if (err.request) {
+            // Network error
+            setError('Network error. Please check your connection and try again.');
+          } else {
+            // Other error
+            setError('An unexpected error occurred. Please try again.');
+          }
         } finally {
           setLoading(false);
         }
       };
       
       reader.onerror = () => {
-        setError('Error reading private key file');
+        setError('Error reading private key file. Please try selecting the file again.');
         setLoading(false);
       };
       
@@ -109,7 +155,7 @@ function Login({ setToken }) {
           {error && (
             <div className="mb-6 p-4 bg-red-500/20 backdrop-blur-sm border border-red-400/30 rounded-xl animate-slide-up">
               <div className="flex items-center">
-                <svg className="h-5 w-5 text-red-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-5 w-5 text-red-400 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <p className="text-sm text-red-200">{error}</p>
@@ -129,6 +175,7 @@ function Login({ setToken }) {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="input-field focus-ring"
+                disabled={loading}
                 required
               />
             </div>
@@ -144,17 +191,18 @@ function Login({ setToken }) {
                   onChange={(e) => setPrivateKeyFile(e.target.files[0])}
                   className="input-field focus-ring file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                   accept=".pem,.key,.txt"
+                  disabled={loading}
                   required
                 />
               </div>
               <p className="mt-2 text-xs text-white/60">
-                Upload the private key file downloaded during registration
+                Upload the private key file (.pem) downloaded during registration
               </p>
             </div>
             
             <div className="bg-yellow-500/10 backdrop-blur-sm border border-yellow-400/30 rounded-xl p-4">
               <div className="flex items-start">
-                <svg className="h-5 w-5 text-yellow-400 mr-3 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-5 w-5 text-yellow-400 mr-3 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
                 </svg>
                 <div>
@@ -170,7 +218,9 @@ function Login({ setToken }) {
             <button
               type="submit"
               disabled={loading}
-              className="btn-primary w-full py-4 text-lg font-semibold"
+              className={`btn-primary w-full py-4 text-lg font-semibold transition-all duration-300 ${
+                loading ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'
+              }`}
             >
               {loading ? (
                 <div className="flex items-center justify-center">

@@ -6,11 +6,11 @@ const CryptoUtils = require('../utils/crypto');
 const CA = require('../utils/ca');
 const rateLimit = require('express-rate-limit');
 
-// Rate limiting
+// Rate limiting for authentication endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // limit each IP to 5 requests per windowMs
-  message: 'Too many authentication attempts, please try again later.'
+  message: { error: 'Too many authentication attempts, please try again later.', success: false }
 });
 
 // Initialize CA on startup
@@ -23,16 +23,42 @@ router.post('/register', authLimiter, async (req, res) => {
   try {
     // Validate input
     if (!username || !email) {
-      return res.status(400).json({ error: 'Username and email are required' });
+      return res.status(400).json({ 
+        error: 'Username and email are required',
+        success: false 
+      });
+    }
+
+    // Sanitize input
+    const cleanUsername = username.trim();
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Validate username format
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(cleanUsername)) {
+      return res.status(400).json({ 
+        error: 'Username must be 3-20 characters and contain only letters, numbers, and underscores',
+        success: false 
+      });
+    }
+
+    // Validate email format
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return res.status(400).json({ 
+        error: 'Please enter a valid email address',
+        success: false 
+      });
     }
 
     // Check if user already exists
     const existingUser = await User.findOne({ 
-      $or: [{ username }, { email }] 
+      $or: [{ username: cleanUsername }, { email: cleanEmail }] 
     });
     
     if (existingUser) {
-      return res.status(409).json({ error: 'Username or email already exists' });
+      return res.status(409).json({ 
+        error: 'Username or email already exists',
+        success: false 
+      });
     }
 
     // Generate RSA key pair
@@ -40,9 +66,9 @@ router.post('/register', authLimiter, async (req, res) => {
     
     // Create certificate subject
     const subject = {
-      commonName: username,
+      commonName: cleanUsername,
       organizationName: 'Secure File Sharing Users',
-      emailAddress: email
+      emailAddress: cleanEmail
     };
 
     // Issue certificate from CA
@@ -50,8 +76,8 @@ router.post('/register', authLimiter, async (req, res) => {
     
     // Create user in database
     const user = new User({
-      username,
-      email,
+      username: cleanUsername,
+      email: cleanEmail,
       publicKey,
       certificate: certData.certificate,
       certificateSerial: certData.serial,
@@ -77,7 +103,8 @@ router.post('/register', authLimiter, async (req, res) => {
     console.error('Registration error:', error);
     res.status(500).json({ 
       error: 'Registration failed', 
-      details: error.message 
+      success: false,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
@@ -90,29 +117,44 @@ router.post('/login', authLimiter, async (req, res) => {
     // Validate input
     if (!username || !challenge || !signature) {
       return res.status(400).json({ 
-        error: 'Username, challenge, and signature are required' 
+        error: 'Username, challenge, and signature are required',
+        success: false 
       });
     }
 
+    const cleanUsername = username.trim();
+
     // Find user
-    const user = await User.findOne({ username });
+    const user = await User.findOne({ username: cleanUsername });
     if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ 
+        error: 'Invalid credentials',
+        success: false 
+      });
     }
 
     // Check if certificate is still valid
     if (user.isRevoked) {
-      return res.status(401).json({ error: 'Certificate has been revoked' });
+      return res.status(401).json({ 
+        error: 'Certificate has been revoked',
+        success: false 
+      });
     }
 
     if (new Date() > user.expiresAt) {
-      return res.status(401).json({ error: 'Certificate has expired' });
+      return res.status(401).json({ 
+        error: 'Certificate has expired',
+        success: false 
+      });
     }
 
     // Verify certificate against CA
     const isValidCert = await CA.verifyCertificate(user.certificate);
     if (!isValidCert) {
-      return res.status(401).json({ error: 'Invalid certificate' });
+      return res.status(401).json({ 
+        error: 'Invalid certificate',
+        success: false 
+      });
     }
 
     // Verify digital signature
@@ -123,7 +165,10 @@ router.post('/login', authLimiter, async (req, res) => {
     );
 
     if (!isValidSignature) {
-      return res.status(401).json({ error: 'Invalid signature' });
+      return res.status(401).json({ 
+        error: 'Invalid signature',
+        success: false 
+      });
     }
 
     // Update last login
@@ -157,8 +202,9 @@ router.post('/login', authLimiter, async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ 
-      error: 'Login failed', 
-      details: error.message 
+      error: 'Login failed',
+      success: false,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
@@ -174,7 +220,11 @@ router.post('/challenge', authLimiter, async (req, res) => {
       timestamp: Date.now()
     });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to generate challenge' });
+    console.error('Challenge generation error:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate challenge',
+      success: false 
+    });
   }
 });
 
@@ -182,10 +232,15 @@ router.post('/challenge', authLimiter, async (req, res) => {
 router.get('/publickey/:username', async (req, res) => {
   try {
     const { username } = req.params;
-    const user = await User.findOne({ username }).select('publicKey username');
+    const cleanUsername = username.trim();
+    
+    const user = await User.findOne({ username: cleanUsername }).select('publicKey username');
     
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ 
+        error: 'User not found',
+        success: false 
+      });
     }
 
     res.json({
@@ -196,7 +251,11 @@ router.get('/publickey/:username', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch public key' });
+    console.error('Public key fetch error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch public key',
+      success: false 
+    });
   }
 });
 
@@ -206,10 +265,16 @@ router.get('/ca-certificate', async (req, res) => {
     const caCert = await CA.getCACertificate();
     res.json({
       success: true,
-      caCertificate: caCert
+      data: {
+        caCertificate: caCert
+      }
     });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to get CA certificate' });
+    console.error('CA certificate fetch error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get CA certificate',
+      success: false 
+    });
   }
 });
 
