@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import axiosInstance, { testConnectivity } from '../utils/api';
 import { useNavigate, Link } from 'react-router-dom';
-import { API_ENDPOINTS } from '../utils/api';
 
 function Register() {
   const [username, setUsername] = useState('');
@@ -9,7 +8,21 @@ function Register() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
+  const [testingConnection, setTestingConnection] = useState(false);
   const navigate = useNavigate();
+
+  const testConnection = async () => {
+    setTestingConnection(true);
+    try {
+      await testConnectivity();
+      setError('✓ Connection successful! Backend is reachable.');
+      setTimeout(() => setError(''), 3000);
+    } catch (err) {
+      setError('✗ Connection failed. Please check if the backend is running.');
+    } finally {
+      setTestingConnection(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -18,6 +31,26 @@ function Register() {
     setSuccess('');
     
     try {
+      // Client-side validation
+      if (!username.trim()) {
+        setError('Please enter a username');
+        setLoading(false);
+        return;
+      }
+
+      if (username.trim().length < 3) {
+        setError('Username must be at least 3 characters long');
+        setLoading(false);
+        return;
+      }
+
+      const usernameRegex = /^[a-zA-Z0-9_]+$/;
+      if (!usernameRegex.test(username.trim())) {
+        setError('Username can only contain letters, numbers, and underscores');
+        setLoading(false);
+        return;
+      }
+
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
@@ -26,10 +59,16 @@ function Register() {
         return;
       }
 
-      const res = await axios.post(API_ENDPOINTS.AUTH.REGISTER, { 
-        username, 
-        email 
+      const res = await axiosInstance.post('/api/auth/register', { 
+        username: username.trim(), 
+        email: email.trim() 
       });
+
+      if (!res.data.success) {
+        setError(res.data.error || 'Registration failed');
+        setLoading(false);
+        return;
+      }
       
       // Create downloads for both private key and certificate
       const privateKeyBlob = new Blob([res.data.data.privateKey], { type: 'text/plain' });
@@ -39,24 +78,46 @@ function Register() {
       const privateKeyUrl = window.URL.createObjectURL(privateKeyBlob);
       const privateKeyLink = document.createElement('a');
       privateKeyLink.href = privateKeyUrl;
-      privateKeyLink.download = `${username}_private_key.pem`;
+      privateKeyLink.download = `${username.trim()}_private_key.pem`;
       privateKeyLink.click();
       window.URL.revokeObjectURL(privateKeyUrl);
       
-      // Download certificate
-      const certUrl = window.URL.createObjectURL(certBlob);
-      const certLink = document.createElement('a');
-      certLink.href = certUrl;
-      certLink.download = `${username}_certificate.pem`;
-      certLink.click();
-      window.URL.revokeObjectURL(certUrl);
+      // Download certificate with slight delay
+      setTimeout(() => {
+        const certUrl = window.URL.createObjectURL(certBlob);
+        const certLink = document.createElement('a');
+        certLink.href = certUrl;
+        certLink.download = `${username.trim()}_certificate.pem`;
+        certLink.click();
+        window.URL.revokeObjectURL(certUrl);
+      }, 500);
       
       setSuccess('Registration successful! Your private key and certificate have been downloaded. Please keep them safe.');
       setTimeout(() => {
         navigate('/login');
       }, 3000);
+      
     } catch (err) {
-      setError(err.response?.data?.error || 'Registration failed');
+      console.error('Registration error:', err);
+      
+      if (err.response) {
+        const status = err.response.status;
+        const errorMessage = err.response.data?.error || 'Registration failed';
+        
+        if (status === 409) {
+          setError('Username or email already exists. Please choose different ones.');
+        } else if (status === 429) {
+          setError('Too many registration attempts. Please try again later.');
+        } else if (status >= 500) {
+          setError('Server error. Please try again later or contact support.');
+        } else {
+          setError(errorMessage);
+        }
+      } else if (err.request || err.code === 'NETWORK_ERROR' || err.code === 'ECONNREFUSED') {
+        setError('Unable to connect to server. Please check that:\n1. The backend service is running\n2. You can access http://localhost:5000\n3. Your network connection is working');
+      } else {
+        setError('An unexpected error occurred. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -89,13 +150,33 @@ function Register() {
         </div>
         
         <div className="glass-card">
+          {/* Connection Test Button */}
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={testConnection}
+              disabled={testingConnection}
+              className="w-full py-2 px-4 text-sm bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 rounded-lg border border-blue-400/30 transition-all duration-200"
+            >
+              {testingConnection ? 'Testing Connection...' : 'Test Backend Connection'}
+            </button>
+          </div>
+
           {error && (
-            <div className="mb-6 p-4 bg-red-500/20 backdrop-blur-sm border border-red-400/30 rounded-xl animate-slide-up">
-              <div className="flex items-center">
-                <svg className="h-5 w-5 text-red-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <div className={`mb-6 p-4 backdrop-blur-sm border rounded-xl animate-slide-up ${
+              error.startsWith('✓') ? 'bg-green-500/20 border-green-400/30' : 'bg-red-500/20 border-red-400/30'
+            }`}>
+              <div className="flex items-start">
+                <svg className={`h-5 w-5 mr-3 mt-0.5 flex-shrink-0 ${
+                  error.startsWith('✓') ? 'text-green-400' : 'text-red-400'
+                }`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={
+                    error.startsWith('✓') ? "M5 13l4 4L19 7" : "M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  } />
                 </svg>
-                <p className="text-sm text-red-200">{error}</p>
+                <pre className={`text-sm whitespace-pre-wrap ${
+                  error.startsWith('✓') ? 'text-green-200' : 'text-red-200'
+                }`}>{error}</pre>
               </div>
             </div>
           )}
@@ -103,7 +184,7 @@ function Register() {
           {success && (
             <div className="mb-6 p-4 bg-green-500/20 backdrop-blur-sm border border-green-400/30 rounded-xl animate-slide-up">
               <div className="flex items-center">
-                <svg className="h-5 w-5 text-green-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-5 w-5 text-green-400 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <p className="text-sm text-green-200">{success}</p>
@@ -123,6 +204,7 @@ function Register() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="input-field focus-ring"
+                disabled={loading}
                 required
                 minLength="3"
                 maxLength="20"
@@ -145,6 +227,7 @@ function Register() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="input-field focus-ring"
+                disabled={loading}
                 required
               />
               <p className="mt-2 text-xs text-white/60">
@@ -154,7 +237,7 @@ function Register() {
             
             <div className="bg-blue-500/10 backdrop-blur-sm border border-blue-400/30 rounded-xl p-4">
               <div className="flex items-start">
-                <svg className="h-5 w-5 text-blue-400 mr-3 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-5 w-5 text-blue-400 mr-3 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <div>
@@ -170,7 +253,9 @@ function Register() {
             <button
               type="submit"
               disabled={loading}
-              className="btn-primary w-full py-4 text-lg font-semibold"
+              className={`btn-primary w-full py-4 text-lg font-semibold transition-all duration-300 ${
+                loading ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'
+              }`}
             >
               {loading ? (
                 <div className="flex items-center justify-center">
